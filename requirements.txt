@@ -1,0 +1,14 @@
+# Python 3.10-3.12 recommended
+streamlit>=1.39,<2
+python-dotenv>=1.0,<2
+
+# LlamaIndex modular packages (let pip resolve compatible versions)
+llama-index-core
+llama-index-llms-openai
+llama-index-embeddings-openai
+llama-index-vector-stores-qdrant
+llama-index-readers-google
+
+qdrant-client>=1.10,<2
+google-api-python-client>=2.140,<3
+google-auth>=2.30,<3
