@@ -70,7 +70,12 @@ def incremental_sync(index, folder_id: str, service_account_json_path: str, mani
 
 def full_ingest(index, folder_id: str, service_account_json_path: str, manifest_path: Path) -> dict[str, int]:
     current_files = list_folder_files(service_account_json_path=service_account_json_path, folder_id=folder_id)
+
+    for file_id in current_files:
+        delete_document_by_file_id(index=index, file_id=file_id)
+
     docs = load_drive_documents(folder_id=folder_id, service_account_json_path=service_account_json_path)
     upsert_documents(index=index, documents=docs)
     write_manifest(manifest_path, _build_manifest_snapshot(current_files))
-    return {"added": len(docs), "updated": 0, "deleted": 0}
+    deleted = len(current_files) - len(docs)
+    return {"added": len(docs), "updated": 0, "deleted": max(deleted, 0)}

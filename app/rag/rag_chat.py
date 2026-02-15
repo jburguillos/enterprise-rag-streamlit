@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from llama_index.core import PromptTemplate
+from llama_index.core import PromptTemplate, Settings
 from llama_index.core.postprocessor import LLMRerank
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.schema import NodeWithScore
@@ -37,6 +37,27 @@ Question: {query_str}
 )
 
 
+FALLBACK_GROUNDED_PROMPT = PromptTemplate(
+    """
+You are an enterprise retrieval assistant.
+Answer the question ONLY using the context below.
+If the answer is present in context, answer directly and concisely.
+If the answer is not present in context, say "I don't know".
+
+Context:
+{context}
+
+Question: {question}
+""".strip()
+)
+
+
+def _looks_unknown(answer: str) -> bool:
+    text = (answer or "").strip().lower()
+    return text in {"", "empty response", "i don't know", "i don't know.", "no lo sé", "no lo se"}
+
+
+
 @dataclass
 class ChatResult:
     answer: str
@@ -54,7 +75,7 @@ def _history_to_text(messages: list[dict[str, str]]) -> str:
 
 
 def condense_question(index, messages: list[dict[str, str]], question: str) -> str:
-    llm = index._llm
+    llm = getattr(index, "_llm", None) or Settings.llm
     history = _history_to_text(messages)
     response = llm.predict(CONDENSE_PROMPT, history=history, question=question)
     return (response or question).strip()
@@ -85,5 +106,20 @@ def run_chat_query(
     response = query_engine.query(standalone_question)
     answer = str(response)
     sources = list(response.source_nodes or [])[: app_settings.rerank_top_n]
+
+    if _looks_unknown(answer) and sources:
+        context = "\n\n".join(
+            f"[Source {idx}] {src.node.get_content()[:1800]}"
+            for idx, src in enumerate(sources, start=1)
+            if src.node.get_content().strip()
+        )
+        if context:
+            fallback = Settings.llm.predict(
+                FALLBACK_GROUNDED_PROMPT,
+                context=context,
+                question=standalone_question,
+            )
+            if fallback and fallback.strip():
+                answer = fallback.strip()
 
     return ChatResult(answer=answer, standalone_question=standalone_question, sources=sources)

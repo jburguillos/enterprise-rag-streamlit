@@ -1,12 +1,40 @@
 from __future__ import annotations
 
 import inspect
+import json
+from pathlib import Path
 from typing import Any, Iterable
 
 from llama_index.core import Document
 from llama_index.readers.google import GoogleDriveReader
 
 from app.rag.drive_acl import acl_metadata_for_file
+
+
+def _build_drive_reader(service_account_json_path: str) -> tuple[GoogleDriveReader, dict[str, Any]]:
+    key_path = Path(service_account_json_path)
+    if not service_account_json_path:
+        raise ValueError("GOOGLE_SERVICE_ACCOUNT_JSON is required for Drive ingestion.")
+    if not key_path.exists():
+        raise FileNotFoundError(
+            f"GOOGLE_SERVICE_ACCOUNT_JSON points to a missing file: {service_account_json_path}"
+        )
+
+    service_account_payload = json.loads(key_path.read_text(encoding="utf-8"))
+    options = [
+        {"service_account_key": service_account_payload},
+        {"service_account_key_file": service_account_json_path},
+        {},
+    ]
+    errors: list[str] = []
+    for kwargs in options:
+        try:
+            sig = inspect.signature(GoogleDriveReader)
+            supported = {k: v for k, v in kwargs.items() if k in sig.parameters}
+            return GoogleDriveReader(**supported), service_account_payload
+        except Exception as exc:  # noqa: PERF203
+            errors.append(str(exc))
+    raise RuntimeError("Unable to initialize GoogleDriveReader: " + " | ".join(errors))
 
 
 def _attempt_load_data(reader: GoogleDriveReader, kwargs_options: list[dict[str, Any]]) -> list[Document]:
@@ -26,11 +54,11 @@ def load_drive_documents(
     service_account_json_path: str,
     file_ids: list[str] | None = None,
 ) -> list[Document]:
-    reader = GoogleDriveReader()
+    reader, service_account_payload = _build_drive_reader(service_account_json_path)
     kwargs_options = [
         {
             "folder_id": folder_id,
-            "service_account_key": service_account_json_path,
+            "service_account_key": service_account_payload,
             "file_ids": file_ids,
             "supportsAllDrives": True,
             "includeItemsFromAllDrives": True,
@@ -44,17 +72,33 @@ def load_drive_documents(
         },
         {
             "folder_id": folder_id,
-            "service_account_key": service_account_json_path,
+            "service_account_key": service_account_payload,
             "file_ids": file_ids,
         },
     ]
     docs = _attempt_load_data(reader, kwargs_options)
     return enrich_documents_with_acl(docs, service_account_json_path)
 
+def _is_readable_text(content: str) -> bool:
+    if not content:
+        return False
+
+    sample = content[:3000]
+    printable = sum(1 for ch in sample if ch.isprintable() or ch in "\n\t\r")
+    ratio = printable / max(len(sample), 1)
+
+    alpha = sum(1 for ch in sample if ch.isalpha())
+    alpha_ratio = alpha / max(len(sample), 1)
+
+    return ratio >= 0.85 and alpha_ratio >= 0.15
+
 
 def enrich_documents_with_acl(documents: Iterable[Document], service_account_json_path: str) -> list[Document]:
     enriched: list[Document] = []
     for doc in documents:
+        content = doc.get_content()
+        if not _is_readable_text(content):
+            continue
         metadata = dict(doc.metadata or {})
         file_id = (
             metadata.get("file_id")
