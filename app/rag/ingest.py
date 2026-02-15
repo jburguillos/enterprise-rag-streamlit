@@ -26,7 +26,15 @@ def load_drive_documents(
     service_account_json_path: str,
     file_ids: list[str] | None = None,
 ) -> list[Document]:
-    reader = GoogleDriveReader()
+    # Some llama-index-readers-google versions require auth at construction time,
+    # while others still accept it in load_data(). Try constructor variants first.
+    try:
+        reader = GoogleDriveReader(service_account_key=service_account_json_path)
+    except TypeError:
+        try:
+            reader = GoogleDriveReader(service_account_key_file=service_account_json_path)
+        except TypeError:
+            reader = GoogleDriveReader()
     kwargs_options = [
         {
             "folder_id": folder_id,
