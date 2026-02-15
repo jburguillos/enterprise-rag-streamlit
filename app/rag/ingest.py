@@ -1,12 +1,40 @@
 from __future__ import annotations
 
 import inspect
+import json
+from pathlib import Path
 from typing import Any, Iterable
 
 from llama_index.core import Document
 from llama_index.readers.google import GoogleDriveReader
 
 from app.rag.drive_acl import acl_metadata_for_file
+
+
+def _build_drive_reader(service_account_json_path: str) -> tuple[GoogleDriveReader, dict[str, Any]]:
+    key_path = Path(service_account_json_path)
+    if not service_account_json_path:
+        raise ValueError("GOOGLE_SERVICE_ACCOUNT_JSON is required for Drive ingestion.")
+    if not key_path.exists():
+        raise FileNotFoundError(
+            f"GOOGLE_SERVICE_ACCOUNT_JSON points to a missing file: {service_account_json_path}"
+        )
+
+    service_account_payload = json.loads(key_path.read_text(encoding="utf-8"))
+    options = [
+        {"service_account_key": service_account_payload},
+        {"service_account_key_file": service_account_json_path},
+        {},
+    ]
+    errors: list[str] = []
+    for kwargs in options:
+        try:
+            sig = inspect.signature(GoogleDriveReader)
+            supported = {k: v for k, v in kwargs.items() if k in sig.parameters}
+            return GoogleDriveReader(**supported), service_account_payload
+        except Exception as exc:  # noqa: PERF203
+            errors.append(str(exc))
+    raise RuntimeError("Unable to initialize GoogleDriveReader: " + " | ".join(errors))
 
 
 def _attempt_load_data(reader: GoogleDriveReader, kwargs_options: list[dict[str, Any]]) -> list[Document]:
@@ -26,11 +54,11 @@ def load_drive_documents(
     service_account_json_path: str,
     file_ids: list[str] | None = None,
 ) -> list[Document]:
-    reader = GoogleDriveReader()
+    reader, service_account_payload = _build_drive_reader(service_account_json_path)
     kwargs_options = [
         {
             "folder_id": folder_id,
-            "service_account_key": service_account_json_path,
+            "service_account_key": service_account_payload,
             "file_ids": file_ids,
             "supportsAllDrives": True,
             "includeItemsFromAllDrives": True,
@@ -44,7 +72,7 @@ def load_drive_documents(
         },
         {
             "folder_id": folder_id,
-            "service_account_key": service_account_json_path,
+            "service_account_key": service_account_payload,
             "file_ids": file_ids,
         },
     ]
