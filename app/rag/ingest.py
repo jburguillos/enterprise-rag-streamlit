@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import inspect
+import json
+from pathlib import Path
 from typing import Any, Iterable
 
 from llama_index.core import Document
@@ -8,6 +10,44 @@ from llama_index.readers.google import GoogleDriveReader
 
 from app.rag.drive_acl import acl_metadata_for_file
 
+
+
+
+def _build_google_drive_reader(service_account_json_path: str) -> GoogleDriveReader:
+    errors: list[str] = []
+    service_account_payload: dict[str, Any] | None = None
+
+    json_path = Path(service_account_json_path)
+    if json_path.exists():
+        try:
+            service_account_payload = json.loads(json_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: PERF203
+            errors.append(f"failed to parse service account json: {exc}")
+
+    constructor_options: list[dict[str, Any]] = [
+        {"service_account_key": service_account_json_path},
+        {"service_account_key_file": service_account_json_path},
+    ]
+
+    if service_account_payload is not None:
+        constructor_options.extend(
+            [
+                {"service_account_key": service_account_payload},
+                {"client_config": service_account_payload},
+            ]
+        )
+
+    constructor_options.append({})
+
+    for kwargs in constructor_options:
+        try:
+            return GoogleDriveReader(**kwargs)
+        except Exception as exc:  # noqa: PERF203
+            errors.append(f"{kwargs}: {exc}")
+
+    raise RuntimeError(
+        "Unable to initialize GoogleDriveReader with known auth signatures: " + " | ".join(errors)
+    )
 
 def _attempt_load_data(reader: GoogleDriveReader, kwargs_options: list[dict[str, Any]]) -> list[Document]:
     errors: list[str] = []
@@ -26,15 +66,7 @@ def load_drive_documents(
     service_account_json_path: str,
     file_ids: list[str] | None = None,
 ) -> list[Document]:
-    # Some llama-index-readers-google versions require auth at construction time,
-    # while others still accept it in load_data(). Try constructor variants first.
-    try:
-        reader = GoogleDriveReader(service_account_key=service_account_json_path)
-    except TypeError:
-        try:
-            reader = GoogleDriveReader(service_account_key_file=service_account_json_path)
-        except TypeError:
-            reader = GoogleDriveReader()
+    reader = _build_google_drive_reader(service_account_json_path)
     kwargs_options = [
         {
             "folder_id": folder_id,
