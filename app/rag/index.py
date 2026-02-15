@@ -4,7 +4,6 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, Filter, FieldCondition, MatchValue, VectorParams
 
 from llama_index.core import Settings, VectorStoreIndex
-from llama_index.core.embeddings import BaseEmbedding
 from llama_index.core.schema import Document
 from llama_index.core.vector_stores import MetadataFilter, MetadataFilters, FilterOperator, FilterCondition
 from llama_index.llms.openai import OpenAI
@@ -42,12 +41,21 @@ def load_existing_index(app_settings: AppSettings) -> VectorStoreIndex:
 
 
 def upsert_documents(index: VectorStoreIndex, documents: list[Document]) -> None:
+    if not documents:
+        return
+
     for doc in documents:
         file_id = (doc.metadata or {}).get("file_id")
         if not file_id:
             continue
         delete_document_by_file_id(index=index, file_id=file_id)
-    index.insert_batch(documents)
+
+    if hasattr(index, "insert_batch"):
+        index.insert_batch(documents)
+        return
+
+    for doc in documents:
+        index.insert(doc)
 
 
 def delete_document_by_file_id(index: VectorStoreIndex, file_id: str) -> None:
