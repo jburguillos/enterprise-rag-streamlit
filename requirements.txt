@@ -1,10 +1,14 @@
-streamlit==1.39.0
-python-dotenv==1.0.1
-llama-index==0.11.20
-llama-index-llms-openai==0.2.16
-llama-index-embeddings-openai==0.2.5
-llama-index-vector-stores-qdrant==0.9.1
-llama-index-readers-google==0.3.1
-qdrant-client==1.11.3
-google-api-python-client==2.149.0
-google-auth==2.35.0
+# Python 3.10-3.12 recommended
+streamlit>=1.39,<2
+python-dotenv>=1.0,<2
+
+# LlamaIndex modular packages (let pip resolve compatible versions)
+llama-index-core
+llama-index-llms-openai
+llama-index-embeddings-openai
+llama-index-vector-stores-qdrant
+llama-index-readers-google
+
+qdrant-client>=1.10,<2
+google-api-python-client>=2.140,<3
+google-auth>=2.30,<3
