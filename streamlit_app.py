@@ -79,31 +79,37 @@ def main() -> None:
         st.divider()
         st.header("Ingestion / Sync")
         if st.button("Initial Ingest (full)", use_container_width=True):
-            with st.spinner("Running full ingest..."):
-                stats = full_ingest(
-                    index=index,
-                    folder_id=settings.drive_folder_id,
-                    service_account_json_path=settings.google_service_account_json,
-                    manifest_path=settings.manifest_path,
+            try:
+                with st.spinner("Running full ingest..."):
+                    stats = full_ingest(
+                        index=index,
+                        folder_id=settings.drive_folder_id,
+                        service_account_json_path=settings.google_service_account_json,
+                        manifest_path=settings.manifest_path,
+                    )
+                st.session_state.last_sync = _now_utc()
+                st.session_state.last_sync_stats = stats
+                write_audit_event(
+                    settings.audit_log_path,
+                    {
+                        "event_type": "ingest_full",
+                        "user_email": user_email,
+                        "user_groups": user_groups,
+                        "stats": stats,
+                    },
                 )
-            st.session_state.last_sync = _now_utc()
-            st.session_state.last_sync_stats = stats
-            write_audit_event(
-                settings.audit_log_path,
-                {
-                    "event_type": "ingest_full",
-                    "user_email": user_email,
-                    "user_groups": user_groups,
-                    "stats": stats,
-                },
-            )
-            st.success(f"Full ingest complete: +{stats['added']} ~{stats['updated']} -{stats['deleted']}")
+                st.success(f"Full ingest complete: +{stats['added']} ~{stats['updated']} -{stats['deleted']}")
+            except Exception as exc:  # noqa: PERF203
+                st.error(f"Initial ingest failed: {exc}")
 
         if st.button("Force Sync Now (incremental)", use_container_width=True):
-            with st.spinner("Running incremental sync..."):
-                _run_incremental(index, settings, user_email, user_groups, reason="manual")
-            stats = st.session_state.last_sync_stats
-            st.success(f"Incremental sync done: +{stats['added']} ~{stats['updated']} -{stats['deleted']}")
+            try:
+                with st.spinner("Running incremental sync..."):
+                    _run_incremental(index, settings, user_email, user_groups, reason="manual")
+                stats = st.session_state.last_sync_stats
+                st.success(f"Incremental sync done: +{stats['added']} ~{stats['updated']} -{stats['deleted']}")
+            except Exception as exc:  # noqa: PERF203
+                st.error(f"Incremental sync failed: {exc}")
 
         enable_auto_sync = st.checkbox("enable_auto_sync", value=True)
         sync_interval_minutes = st.number_input("sync interval (minutes)", min_value=1, max_value=120, value=10)
@@ -127,7 +133,10 @@ def main() -> None:
             now = _now_utc()
             last_sync = st.session_state.last_sync
             if last_sync is None or now - last_sync >= timedelta(minutes=int(sync_interval_minutes)):
-                _run_incremental(index, settings, user_email, user_groups, reason="auto")
+                try:
+                    _run_incremental(index, settings, user_email, user_groups, reason="auto")
+                except Exception as exc:  # noqa: PERF203
+                    st.warning(f"Auto sync skipped: {exc}")
 
         auto_sync_fragment()
 
