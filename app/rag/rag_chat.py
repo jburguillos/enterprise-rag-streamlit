@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from llama_index.core import PromptTemplate
+from llama_index.core import PromptTemplate, Settings
 from llama_index.core.postprocessor import LLMRerank
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.schema import NodeWithScore
@@ -54,7 +54,7 @@ def _history_to_text(messages: list[dict[str, str]]) -> str:
 
 
 def condense_question(index, messages: list[dict[str, str]], question: str) -> str:
-    llm = index._llm
+    llm = getattr(index, "_llm", None) or Settings.llm
     history = _history_to_text(messages)
     response = llm.predict(CONDENSE_PROMPT, history=history, question=question)
     return (response or question).strip()
