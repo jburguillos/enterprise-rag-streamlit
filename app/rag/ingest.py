@@ -79,10 +79,26 @@ def load_drive_documents(
     docs = _attempt_load_data(reader, kwargs_options)
     return enrich_documents_with_acl(docs, service_account_json_path)
 
+def _is_readable_text(content: str) -> bool:
+    if not content:
+        return False
+
+    sample = content[:3000]
+    printable = sum(1 for ch in sample if ch.isprintable() or ch in "\n\t\r")
+    ratio = printable / max(len(sample), 1)
+
+    alpha = sum(1 for ch in sample if ch.isalpha())
+    alpha_ratio = alpha / max(len(sample), 1)
+
+    return ratio >= 0.85 and alpha_ratio >= 0.15
+
 
 def enrich_documents_with_acl(documents: Iterable[Document], service_account_json_path: str) -> list[Document]:
     enriched: list[Document] = []
     for doc in documents:
+        content = doc.get_content()
+        if not _is_readable_text(content):
+            continue
         metadata = dict(doc.metadata or {})
         file_id = (
             metadata.get("file_id")
