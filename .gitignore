@@ -1,0 +1,23 @@
+# Virtual environments
+.venv/
+venv/
+
+# Secrets / local env
+.env
+.env.*
+
+# Python cache/build
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
